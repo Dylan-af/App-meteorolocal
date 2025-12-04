@@ -1,52 +1,97 @@
+// Código para ESP8266 con sensor de Temperatura y Humedad (DHT22/DHT11)
+// Envía los datos a Firebase Realtime Database
+// VERSIÓN CORREGIDA #2 - COMPATIBLE CON LIBRERÍA FIREBASE ACTUALIZADA
 
-// Este es un código de ejemplo para un ESP32 que lee datos de un sensor BME280
-// y los envía a través del puerto serie. Necesitarás instalar las librerías
-// "Adafruit BME280 Library" y "Adafruit Unified Sensor Library".
+// --- LIBRERÍAS NECESARIAS ---
+#include <ESP8266WiFi.h>
+#include <FirebaseESP8266.h>
+#include <DHT.h>
 
-#include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
+// --- CONFIGURACIÓN DEL USUARIO (¡MODIFICA ESTOS VALORES!) ---
 
-// Dirección I2C del sensor BME280. Puede ser 0x76 o 0x77.
-#define BME_I2C_ADDRESS 0x76
+// 1. Configuración de tu red Wi-Fi
+#define WIFI_SSID "S21"
+#define WIFI_PASSWORD "lll90222"
 
-Adafruit_BME280 bme; // Objeto para el sensor
+// 2. Configuración de Firebase
+#define API_KEY "AIzaSyAehjLpZLbPeXrT2j5fKcf8Cr4cT46asfY" 
+#define DATABASE_URL "https://meteorolocal-default-rtdb.firebaseio.com"
+
+// 3. Configuración del Sensor DHT
+#define DHTPIN 4       // Pin digital D2 en la placa NodeMCU (corresponde a GPIO4)
+#define DHTTYPE DHT11  // Cambia a DHT11 si usas ese sensor.
+
+// --- OBJETOS GLOBALES ---
+
+DHT dht(DHTPIN, DHTTYPE);
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
+// --- FUNCIÓN DE INICIALIZACIÓN ---
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) {
-    ; // Espera a que el puerto serie se conecte
-  }
+  while (!Serial) { ; }
 
-  Serial.println("Estación Meteorológica ESP32");
+  Serial.println("Estación Meteorológica ESP8266 - Conectando...");
 
-  if (!bme.begin(BME_I2C_ADDRESS)) {
-    Serial.println("No se pudo encontrar un sensor BME280 válido, ¡revisa el cableado!");
-    while (1);
+  dht.begin();
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("Conectando a Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(300);
   }
+  Serial.println();
+  Serial.print("Conectado con IP: ");
+  Serial.println(WiFi.localIP());
+
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+
+   /* Assign the user sign in credentials */
+  auth.user.email = "esp32@inacap.cl";
+  auth.user.password = "123456";
+
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
 }
 
-void loop() {
-  // Lee los datos del sensor
-  float temperature = bme.readTemperature();
-  float humidity = bme.readHumidity();
-  float pressure = bme.readPressure() / 100.0F; // Convierte a hPa
+// --- BUCLE PRINCIPAL ---
 
-  // Imprime los datos en el monitor serie
+void loop() {
+  delay(300); 
+
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("Error al leer el sensor DHT!");
+    return;
+  }
+
+  Serial.print("Humedad: ");
+  Serial.print(humidity);
+  Serial.print(" %\t");
   Serial.print("Temperatura: ");
   Serial.print(temperature);
   Serial.println(" *C");
 
-  Serial.print("Humedad: ");
-  Serial.print(humidity);
-  Serial.println(" %");
+  FirebaseJson json;
+  json.set("temperature", temperature);
+  json.set("humidity", humidity);
 
-  Serial.print("Presión: ");
-  Serial.print(pressure);
-  Serial.println(" hPa");
-
-  Serial.println();
-
-  // Espera 2 segundos antes de la siguiente lectura
-  delay(2000);
+  Serial.println("Enviando datos a Firebase...");
+  
+  // --- LÍNEA CORREGIDA ---
+  // Se han quitado los símbolos '&' de fbdo y json para usar referencias en lugar de punteros.
+  if (Firebase.setJSON(fbdo, "sensor_data", json)) {
+    Serial.println("-> Datos enviados correctamente");
+  } else {
+    Serial.println("-> Error al enviar datos");
+    Serial.println("RAZÓN: " + fbdo.errorReason());
+  }
 }
